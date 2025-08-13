@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Estacionamento SMAMUS - 3D</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f0f2f5;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    h2 { margin: 20px 0 10px; text-align: center; color: #333; }
+    #contador { margin-bottom: 15px; font-weight: bold; color: #555; }
+
+    .wrapper { width: 100%; max-width: 1100px; padding: 10px; display: flex; justify-content: center; }
+    #estacionamento { position: relative; width: 100%; height: 650px; border: 2px solid #333; border-radius: 10px; overflow: hidden; background:#e9edf3; }
+
+    #admin-access-container { position: fixed; top: 10px; right: 10px; z-index: 1000; }
+    .admin-buttons-centered {
+      display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+      margin-bottom: 20px; width: 100%; max-width: 1100px;
+    }
+    .button-style {
+      padding: 8px 12px; font-size: 14px; cursor: pointer; border: none; border-radius: 8px;
+      color: white; background-color: #3CB371; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      transition: background-color 0.2s ease, transform 0.15s ease;
+    }
+    .button-style:hover { background-color: #008000; transform: translateY(-1px); }
+    .hidden { display: none !important; }
+
+    .legenda {
+      margin-top: 16px; display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; text-align: center;
+    }
+    .legenda-item { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+    .legenda-icon { width: 24px; height: 24px; border-radius: 5px; border: 1px solid #000; background-size: cover; background-position: center; }
+    .livre { background-color: rgba(0, 200, 0, 0.5); }
+    .ocupada { background-color: rgba(200,0,0,0.7); }
+    .especial-livre { background-color: rgba(0, 0, 200, 0.5); }
+    .especial-ocupada { background-color: #d3d3d3; }
+
+    @media (max-width: 600px) {
+      .legenda { flex-direction: column; gap: 10px; }
+      #admin-access-container { position: static; margin-top: 10px; margin-bottom: 10px; text-align: center; }
+      .admin-buttons-centered { margin-bottom: 10px; }
+      .button-style { font-size: 12px; padding: 6px 8px; }
+      #estacionamento { height: 500px; }
+    }
+  </style>
+</head>
+<body>
+  <h2>Estacionamento SMAMUS (3D)</h2>
+  <div id="contador">Total: 0 | Ocupadas: 0 | Livres: 0</div>
+
+  <div id="admin-access-container">
+    <button id="admin-mode-btn" class="button-style">Modo Administrador</button>
+  </div>
+
+  <div id="admin-buttons-wrapper" class="admin-buttons-centered hidden">
+    <button id="user-mode-btn" class="button-style">Modo Usuário</button>
+    <button id="selecionar-todas" class="admin-button button-style hidden">Selecionar Todas</button>
+    <button id="deselecionar-todas" class="admin-button button-style hidden">Limpar Todas</button>
+    <button id="criar-vaga" class="admin-button button-style hidden">Criar Vaga</button>
+    <button id="apagar-vaga" class="admin-button button-style hidden">Apagar Vaga</button>
+    <button id="mover-vaga" class="admin-button button-style hidden">Mover/Rotacionar</button>
+  </div>
+
+  <div class="wrapper"><div id="estacionamento"></div></div>
+
+  <div class="legenda">
+    <div class="legenda-item"><div class="legenda-icon livre"></div><span>Vaga Livre</span></div>
+    <div class="legenda-item"><div class="legenda-icon ocupada"></div><span>Vaga Ocupada</span></div>
+    <div class="legenda-item"><div class="legenda-icon especial-livre"></div><span>Vaga Especial Livre</span></div>
+    <div class="legenda-item"><div class="legenda-icon especial-ocupada"></div><span>Vaga Especial Ocupada</span></div>
+  </div>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js"></script>
+
+  <!-- Three.js e utilitários (versão compatível, não-ESM) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/TransformControls.js"></script>
+
+  <script>
+    // ------------------ Firebase ------------------
+    const firebaseConfig = {
+      apiKey: "AIzaSyDvgoGXBnFZbXi28SuSnQlx8mIN6Ebsflk",
+      authDomain: "estacionamentosmamus.firebaseapp.com",
+      databaseURL: "https://estacionamentosmamus-default-rtdb.firebaseio.com",
+      projectId: "estacionamentosmamus",
+      storageBucket: "estacionamentosmamus.appspot.com",
+      messagingSenderId: "864410096092",
+      appId: "1:864410096092:web:c8f039da393d4130bb7f19",
+    };
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+    const vagasRef = database.ref('vagas');
+
+    const contador = document.getElementById('contador');
+    const adminAccessBtn = document.getElementById('admin-mode-btn');
+    const adminButtonsWrapper = document.getElementById('admin-buttons-wrapper');
+    const allAdminButtons = adminButtonsWrapper.querySelectorAll('button');
+    const userModeBtn = document.getElementById('user-mode-btn');
+
+    let isAdminMode = false;
+    let isMoveMode = false;
+    let selectedAction = null;
+    const adminPassword = "admin123";
+    let vagas = [];                  // [{id, top, left, rotate, ocupada}, ...]
+    let vagaMeshes = new Map();      // id -> { mesh, labelMesh }
+
+    function toggleAdminButtonsWrapper(show) {
+      if (show) adminButtonsWrapper.classList.remove('hidden');
+      else adminButtonsWrapper.classList.add('hidden');
+    }
+    function toggleIndividualAdminButtons(show) {
+      allAdminButtons.forEach(button => {
+        if (button.id === 'user-mode-btn') {
+          button.classList.remove('hidden');
+        } else {
+          show ? button.classList.remove('hidden') : button.classList.add('hidden');
+        }
+      });
+    }
+
+    // ------------------ Three.js Cena ------------------
+    const container3D = document.getElementById('estacionamento');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf0f2f5);
+
+    const camera = new THREE.PerspectiveCamera(60, container3D.clientWidth / container3D.clientHeight, 0.1, 2000);
+    camera.position.set(80, 80, 80);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(container3D.clientWidth, container3D.clientHeight);
+    container3D.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 0, 0);
+
+    // Luzes
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(120, 180, 120);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    // Plano base (referência 100x100)
+    const PLANE_SIZE = 100;
+    const planeGeo = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE);
+    const planeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.0, roughness: 1.0 });
+    const plane = new THREE.Mesh(planeGeo, planeMat);
+    plane.rotation.x = -Math.PI / 2;
+    plane.receiveShadow = true;
+    scene.add(plane);
+
+    // Carregar modelo GLB
+    const loader = new THREE.GLTFLoader();
+    // Ajuste o offset para alinhar o modelo sobre o plano se necessário
+    const MODEL_OFFSET = new THREE.Vector3(0, 0, 0); // ex.: new THREE.Vector3(0, 0, 0)
+    loader.load('est v2.glb', (gltf) => {
+      const model = gltf.scene;
+      model.traverse((obj) => {
+        if (obj.isMesh) {
+          obj.castShadow = true;
+          obj.receiveShadow = true;
+        }
+      });
+      model.position.copy(MODEL_OFFSET);
+      // Se o modelo estiver grande/pequeno demais, ajuste aqui:
+      // model.scale.set(1, 1, 1);
+      scene.add(model);
+    }, undefined, (err) => {
+      console.error('Erro ao carregar GLB:', err);
+      alert('Não foi possível carregar "est v2.glb". Confira o nome do arquivo e use um servidor local (ex.: Live Server ou python -m http.server).');
+    });
+
+    // Raycaster para cliques
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    // TransformControls para mover/rotacionar em modo admin
+    const transformControls = new THREE.TransformControls(camera, renderer.domElement);
+    transformControls.setMode('translate'); // alternaremos para 'rotate' quando Shift estiver pressionado
+    transformControls.addEventListener('dragging-changed', (event) => {
+      controls.enabled = !event.value;
+    });
+    scene.add(transformControls);
+
+    // Criar material/cores
+    const MATERIALS = {
+      livre: new THREE.MeshStandardMaterial({ color: 0x22aa22, metalness: 0, roughness: 0.9, transparent: true, opacity: 0.85 }),
+      ocupada: new THREE.MeshStandardMaterial({ color: 0xaa2222, metalness: 0, roughness: 0.9, transparent: true, opacity: 0.9 }),
+      especialLivre: new THREE.MeshStandardMaterial({ color: 0x2244aa, metalness: 0, roughness: 0.9, transparent: true, opacity: 0.85 }),
+      especialOcupada: new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0, roughness: 0.9, transparent: true, opacity: 0.9 }),
+      label: new THREE.MeshBasicMaterial({ color: 0xffffff })
+    };
+
+    // Geometrias para “placa” da vaga e um rótulo em cima
+    const vagaGeo = new THREE.BoxGeometry(3.5, 0.2, 1.8); // ajuste dimensões conforme desejar
+    const labelGeo = new THREE.PlaneGeometry(2.2, 0.8);
+
+    // Helper: cria textura de texto em canvas para a label
+    function makeLabelTexture(text) {
+      const c = document.createElement('canvas');
+      const ctx = c.getContext('2d');
+      const W = 256, H = 128;
+      c.width = W; c.height = H;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.font = 'bold 64px Segoe UI, Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(text, W/2, H/2);
+      const tex = new THREE.CanvasTexture(c);
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      return tex;
+    }
+
+    function vagaMaterialFor(v) {
+      const isEspecial = (v.id === 'V15' || v.id === 'V16');
+      if (v.ocupada) return isEspecial ? MATERIALS.especialOcupada : MATERIALS.ocupada;
+      return isEspecial ? MATERIALS.especialLivre : MATERIALS.livre;
+    }
+
+    // Converte {top%, left%} do layout antigo em coordenadas X,Z no plano 100x100
+    function toPlaneCoords(leftPercent, topPercent) {
+      const x = (leftPercent / 100) * PLANE_SIZE - (PLANE_SIZE / 2);
+      const z = (1 - topPercent / 100) * PLANE_SIZE - (PLANE_SIZE / 2);
+      return { x, z };
+    }
+
+    // Cria ou atualiza uma vaga como objeto 3D
+    function upsertVaga3D(v) {
+      let entry = vagaMeshes.get(v.id);
+      const material = vagaMaterialFor(v);
+
+      if (!entry) {
+        // Mesh principal (placa da vaga)
+        const mesh = new THREE.Mesh(vagaGeo, material);
+        mesh.userData.vagaId = v.id;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        // Label (placa vertical)
+        const labelMat = new THREE.MeshBasicMaterial({ map: makeLabelTexture(v.id), transparent: true });
+        const labelMesh = new THREE.Mesh(labelGeo, labelMat);
+        labelMesh.userData.vagaId = v.id;
+        labelMesh.position.set(0, 1.0, 0);
+        // manter a label sempre voltada à câmera (ajustaremos no render)
+
+        const group = new THREE.Group();
+        group.userData.vagaId = v.id;
+        group.add(mesh);
+        group.add(labelMesh);
+
+        scene.add(group);
+        vagaMeshes.set(v.id, { group, mesh, labelMesh, labelMat });
+        entry = vagaMeshes.get(v.id);
+      } else {
+        // apenas atualizar o material e a textura da label se necessário
+        entry.mesh.material = material;
+        entry.labelMat.map = makeLabelTexture(v.ocupada ? '' : v.id);
+        entry.labelMat.needsUpdate = true;
+      }
+
+      // posicionamento e rotação conforme dados
+      const pos = toPlaneCoords(v.left ?? 10, v.top ?? 10);
+      entry.group.position.set(pos.x, 0.11, pos.z); // 0.11 = um pouquinho acima do chão
+      const rotY = (v.rotate ?? 0) * (Math.PI / 180); // graus -> radianos
+      entry.group.rotation.set(0, rotY, 0);
+      // Esconde label se estiver ocupada (como no 2D)
+      entry.labelMesh.visible = !v.ocupada;
+    }
+
+    function removeVaga3D(id) {
+      const entry = vagaMeshes.get(id);
+      if (!entry) return;
+      transformControls.detach(); // caso estivesse selecionada
+      scene.remove(entry.group);
+      if (entry.group) entry.group.traverse(obj => {
+        if (obj.geometry) obj.geometry.dispose?.();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose?.());
+          else obj.material.dispose?.();
+        }
+        if (obj.material && obj.material.map) obj.material.map.dispose?.();
+      });
+      vagaMeshes.delete(id);
+    }
+
+    // Atualiza contador
+    function atualizarContador() {
+      const total = vagas.length;
+      const ocupadas = vagas.filter(v => v.ocupada).length;
+      contador.textContent = `Total: ${total} | Ocupadas: ${ocupadas} | Livres: ${total - ocupadas}`;
+    }
+
+    // Sync Firebase -> 3D
+    vagasRef.on('value', (snapshot) => {
+      const data = snapshot.val() || {};
+      const idsAtuais = new Set(Object.keys(data));
+
+      // remover as que não existem mais
+      for (const id of Array.from(vagaMeshes.keys())) {
+        if (!idsAtuais.has(id)) removeVaga3D(id);
+      }
+
+      // atualizar/criar as que existem
+      vagas = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+      for (const v of vagas) upsertVaga3D(v);
+
+      atualizarContador();
+    });
+
+    // Clique do usuário
+    function onClick(e) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      // Priorizar interseção com grupos/meshes das vagas
+      const intersectables = [];
+      vagaMeshes.forEach(({ group }) => intersectables.push(group));
+      const intersects = raycaster.intersectObjects(intersectables, true);
+
+      if (intersects.length > 0) {
+        const first = intersects[0].object;
+        const group = first.userData.vagaId ? vagaMeshes.get(first.userData.vagaId).group : first.parent;
+        const vagaId = group.userData.vagaId;
+
+        if (!isAdminMode) {
+          // Modo usuário não altera: apenas ignora ou futuramente pode mostrar tooltip
+          return;
+        }
+
+        if (selectedAction === 'delete') {
+          vagasRef.child(vagaId).remove();
+          selectedAction = null;
+          return;
+        }
+
+        if (isMoveMode) {
+          transformControls.attach(group);
+          return;
+        }
+
+        // Toggle ocupação
+        const v = vagas.find(x => x.id === vagaId);
+        if (v) vagasRef.child(vagaId).update({ ocupada: !v.ocupada });
+      } else {
+        if (isMoveMode) transformControls.detach();
+      }
+    }
+    renderer.domElement.addEventListener('click', onClick);
+
+    // Rotacionar com SHIFT no TransformControls
+    window.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Shift') transformControls.setMode('rotate');
+    });
+    window.addEventListener('keyup', (ev) => {
+      if (ev.key === 'Shift') transformControls.setMode('translate');
+    });
+
+    // Quando o usuário terminar de mover/rotacionar, persistir no Firebase (top/left/rotate)
+    transformControls.addEventListener('objectChange', () => {
+      if (!isAdminMode || !isMoveMode) return;
+      const obj = transformControls.object;
+      if (!obj || !obj.userData.vagaId) return;
+      const vagaId = obj.userData.vagaId;
+
+      // Converter posição X,Z de volta para percentuais top/left
+      const x = obj.position.x, z = obj.position.z;
+      const left = ((x + PLANE_SIZE / 2) / PLANE_SIZE) * 100;
+      const top = (1 - (z + PLANE_SIZE / 2) / PLANE_SIZE) * 100;
+
+      // Rotação Y (radianos -> graus normalizados 0-360)
+      let deg = THREE.MathUtils.radToDeg(obj.rotation.y) % 360;
+      if (deg < 0) deg += 360;
+
+      vagasRef.child(vagaId).update({
+        top: Math.max(0, Math.min(100, top)),
+        left: Math.max(0, Math.min(100, left)),
+        rotate: deg
+      });
+    });
+
+    // Admin UI
+    adminAccessBtn.addEventListener('click', () => {
+      const senha = prompt("Digite a senha do administrador:");
+      if (senha === adminPassword) {
+        isAdminMode = true;
+        alert("Modo Administrador ativado.");
+        adminAccessBtn.classList.add('hidden');
+        toggleAdminButtonsWrapper(true);
+        toggleIndividualAdminButtons(true);
+      } else {
+        alert("Senha incorreta!");
+      }
+    });
+
+    userModeBtn.addEventListener('click', () => {
+      isAdminMode = false;
+      isMoveMode = false;
+      selectedAction = null;
+      transformControls.detach();
+      adminAccessBtn.classList.remove('hidden');
+      toggleAdminButtonsWrapper(false);
+      toggleIndividualAdminButtons(false);
+    });
+
+    document.getElementById('selecionar-todas').addEventListener('click', () => {
+      if (!isAdminMode) return;
+      vagas.forEach(v => vagasRef.child(v.id).update({ ocupada: true }));
+    });
+
+    document.getElementById('deselecionar-todas').addEventListener('click', () => {
+      if (!isAdminMode) return;
+      vagas.forEach(v => vagasRef.child(v.id).update({ ocupada: false }));
+    });
+
+    document.getElementById('criar-vaga').addEventListener('click', () => {
+      if (!isAdminMode) return;
+      const novaId = prompt('ID da nova vaga:');
+      if (!novaId) return;
+      // cria no centro com rotação 0 desocupada
+      vagasRef.child(novaId).set({ top: 50, left: 50, rotate: 0, ocupada: false });
+    });
+
+    document.getElementById('apagar-vaga').addEventListener('click', () => {
+      if (!isAdminMode) return;
+      selectedAction = 'delete';
+      alert('Clique na vaga que deseja apagar.');
+    });
+
+    document.getElementById('mover-vaga').addEventListener('click', () => {
+      if (!isAdminMode) return;
+      isMoveMode = !isMoveMode;
+      alert(isMoveMode
+        ? 'Modo mover/rotacionar ativado. Clique em uma vaga para selecionar. (Segure SHIFT para rotacionar)'
+        : 'Modo mover/rotacionar desativado.');
+      if (!isMoveMode) transformControls.detach();
+    });
+
+    // Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = container3D.clientWidth / container3D.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container3D.clientWidth, container3D.clientHeight);
+    });
+
+    // Render loop
+    function animate() {
+      requestAnimationFrame(animate);
+      // manter labels voltadas para a câmera
+      vagaMeshes.forEach(({ labelMesh }) => {
+        if (labelMesh && labelMesh.visible) {
+          labelMesh.lookAt(camera.position);
+        }
+      });
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Estado inicial dos botões
+    toggleAdminButtonsWrapper(false);
+    adminAccessBtn.classList.remove('hidden');
+  </script>
+</body>
+</html>
