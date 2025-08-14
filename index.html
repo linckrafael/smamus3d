@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Estacionamento SMAMUS 3D</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #info { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
+    #admin { position: absolute; top: 10px; right: 10px; background: green; color: white; padding: 10px; border: none; border-radius: 5px; cursor: pointer; }
+  </style>
+
+  <!-- Versão compatível do Three.js e GLTFLoader -->
+  <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+  <div id="info">Estacionamento SMAMUS 3D<br>Total: 0 | Ocupadas: 0 | Livres: 0</div>
+  <button id="admin">Modo Administrador</button>
+
+  <script>
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const light = new THREE.HemisphereLight(0xffffff, 0x444444);
+    light.position.set(0, 200, 0);
+    scene.add(light);
+
+    const loader = new THREE.GLTFLoader();
+    loader.load('modelo.glb', function (gltf) {
+      scene.add(gltf.scene);
+      gltf.scene.position.set(0, 0, 0);
+    }, undefined, function (error) {
+      console.error('Erro ao carregar modelo:', error);
+    });
+
+    camera.position.z = 5;
+
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
